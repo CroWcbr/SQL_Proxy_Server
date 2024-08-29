@@ -48,7 +48,7 @@ Logger::Logger(const std::string& file_name)
         exit(EXIT_FAILURE);
     }
 
-	std::cout << "Logger to " << full_file_path << " start" << std::endl;
+    std::cout << "Logger to " << full_file_path << " start" << std::endl;
 }
 
 Logger::~Logger()
@@ -62,7 +62,14 @@ void Logger::log(const std::string& message)
     file_stream << getCurrentDateTime() << message << std::endl;
 }
 
-void Logger::log(const std::string& message, LogType type)
+void Logger::log(const char* message, size_t length)
+{
+    file_stream << getCurrentDateTime();
+    file_stream.write(message, length);
+    file_stream << std::endl;
+}
+
+void Logger::log(LogType type, const std::string& message)
 {
     switch (type)
     {
@@ -77,6 +84,9 @@ void Logger::log(const std::string& message, LogType type)
             break;
         case LogType::DEBUG:
             file_stream << "[DEBUG] ";
+            break;
+        case LogType::WARNING:
+            file_stream << "[WARNING] ";
             break;
         default:
             file_stream << "[UNKNOWN] ";

@@ -28,7 +28,7 @@ OK			=	$(C_OK)OK$(C_NO)
 
 all			:	$(NAME)
 
-$(OBJ)		: 	| $(OBJ_DIR)	
+$(OBJ)		: 	| $(OBJ_DIR)
 
 $(OBJ_DIR)	:
 				@mkdir -p $(OBJ_DIR)

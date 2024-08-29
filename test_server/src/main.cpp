@@ -2,9 +2,9 @@
 
 int main()
 {
-	Proxy proxy(HOST, PORT);
+    Proxy proxy(HOST, PORT);
 
-	proxy.Loop();
+    proxy.Loop();
 
-	return 0;
+    return 0;
 }

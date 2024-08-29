@@ -1,48 +1,41 @@
 #include "../include/Logger.hpp"
+#include "../include/Proxy.hpp"
 #include <string>
 #include <signal.h>
 #include <iostream>
 
-// for test
-#include <unistd.h>
+bool Proxy::should_stop = false;
 
-static void	_signal_handler(int signal)
+static void    _signal_handler(int signal)
 {
-	{
-		std::string msg = "\rSTOP SIGNAL";
-		if (signal == -1)
-			msg.append(" Ctrl + D ");
-		else if (signal == 2)
-			msg.append(" Ctrl + C ");
-		else if (signal == 3)
-			msg.append(" Ctrl + / ");
-		else if (signal == 20)
-			msg.append(" Ctrl + Z ");
+    {
+        std::string msg = "\rSTOP SIGNAL";
+        if (signal == -1)
+            msg.append(" Ctrl + D ");
+        else if (signal == 2)
+            msg.append(" Ctrl + C ");
+        else if (signal == 3)
+            msg.append(" Ctrl + / ");
+        else if (signal == 20)
+            msg.append(" Ctrl + Z ");
 
-		msg.append("from user");
+        msg.append("from user");
 
-		std::cout << "\033[91m";
-		std::cout << msg << std::endl;
-		std::cout << "\033[0m";
-	}
-	exit(signal);
+        std::cout << "\033[91m";
+        std::cout << msg << std::endl;
+        std::cout << "\033[0m";
+    }
+    Proxy::stop();
 }
 
-int main()
+int main(int argc, char **argv)
 {
-    signal(SIGINT, _signal_handler);	//Ctrl + 'C'
-	signal(SIGQUIT, _signal_handler);	//Ctrl + '\'
-	signal(SIGTSTP, _signal_handler);	//Ctrl + 'Z'
+    signal(SIGINT, _signal_handler);
+    signal(SIGQUIT, _signal_handler);
+    signal(SIGTSTP, _signal_handler);
 
-	Logger log_query("log_query");
-	Logger log_debug;
-
-    while (true)
-	{
-		sleep(1);
-		log_query.log("123");
-		log_debug.log("123", LogType::INFO);
-    }
+    Proxy proxy(argc, argv);
+    proxy.run();
 
     return 0;
 }

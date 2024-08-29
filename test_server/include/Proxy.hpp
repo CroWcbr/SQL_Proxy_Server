@@ -19,26 +19,26 @@
 class Proxy
 {
 private:
-	typedef std::vector<struct pollfd>	pollfdType;
-	pollfdType							_fds;
+    typedef std::vector<struct pollfd>    pollfdType;
+    pollfdType                            _fds;
 
-	std::string							_local_ip;
-	int									_local_port;
-	sockaddr_in 						_local_addr;
-	int									_local_fd;
+    std::string                            _local_ip;
+    int                                    _local_port;
+    sockaddr_in                         _local_addr;
+    int                                    _local_fd;
 
-	std::string							_request;
+    std::string                            _request;
 
-private:	
-	Proxy();
+private:    
+    Proxy();
 
-	void	_PollInServ(pollfdType::iterator &it);
-	void	_PollInUser(pollfdType::iterator &it);
-	void	_PollElse(pollfdType::iterator &it);
+    void    _PollInServ(pollfdType::iterator &it);
+    void    _PollInUser(pollfdType::iterator &it);
+    void    _PollElse(pollfdType::iterator &it);
 
 public:
-	Proxy(std::string addr_ip, int addr_port);
-	~Proxy();
+    Proxy(std::string addr_ip, int addr_port);
+    ~Proxy();
 
-	void Loop();
+    void Loop();
 };

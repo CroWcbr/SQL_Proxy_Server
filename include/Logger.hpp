@@ -1,3 +1,5 @@
+#pragma once
+
 #include <string>
 #include <fstream>
 
@@ -8,7 +10,8 @@ enum LogType
     INFO,
     LOG,
     ERROR,
-    DEBUG
+    DEBUG,
+    WARNING,
 };
 
 class Logger
@@ -22,9 +25,11 @@ public:
     Logger();
     Logger(const std::string& file_name);
     ~Logger();
-	Logger(Logger const &copy) = delete;
-	Logger &operator=(Logger const &copy) = delete;
+    Logger(Logger const &copy) = delete;
+    Logger &operator=(Logger const &copy) = delete;
 
     void log(const std::string& message);
-    void log(const std::string& message, LogType type);
+    void log(const char* message, size_t length);
+    void log(LogType type, const std::string& message);
+
 };
