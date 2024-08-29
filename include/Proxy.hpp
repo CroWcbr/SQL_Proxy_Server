@@ -11,7 +11,7 @@
 #define LOG_DEBUG "log_debug"
 #define PROXY_HOST "127.0.0.1"
 #define MAX_LISTEN 100
-# define MAX_BUFFER_RECV 1024
+# define MAX_BUFFER_RECV 65536
 
 struct Connection
 {

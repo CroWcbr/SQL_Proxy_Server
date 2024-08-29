@@ -13,7 +13,7 @@
 
 Proxy::Proxy(int argc, char **argv):
     log_query(LOG_QUERY)
-    // , log_debug(LOG_DEBUG) // дефолтный конструктор по умолчанию в stdout
+    , log_debug(LOG_DEBUG) // дефолтный конструктор по умолчанию в stdout
 {
     if (!(_init_param(argc, argv) && _proxy_start()))
     {
@@ -197,7 +197,7 @@ void Proxy::run()
 void Proxy::_poll_in_serv(pollfdType::iterator &it)
 {
     // установка соединения
-    log_debug.log(LogType::INFO, "_poll_in_serv : " + std::to_string(it->fd));
+    // log_debug.log(LogType::INFO, "_poll_in_serv : " + std::to_string(it->fd));
 
     int user_fd = accept(it->fd, nullptr, nullptr);
     if (user_fd < 0)
@@ -267,12 +267,12 @@ void Proxy::_poll_in_connection(pollfdType::iterator &it)
 {
     // пересылка сообщения
     // Драфт, я не ожидаю большие сообщения, работает в один заход, в будущем можно добавить цикл или отправку частями.
-    log_debug.log(LogType::INFO, "_poll_in_connection : " +  std::to_string(it->fd) + " from " + (connection[it->fd].client ? "client" : "server"));
+    // log_debug.log(LogType::INFO, "_poll_in_connection : " +  std::to_string(it->fd) + " from " + (connection[it->fd].client ? "client" : "server"));
 
     char buffer[MAX_BUFFER_RECV];
     int nbytes = recv(it->fd, buffer, MAX_BUFFER_RECV - 1, 0);
 
-    log_debug.log(LogType::DEBUG, "recv : " + std::to_string(nbytes) + " " + std::string(buffer, nbytes));
+    // log_debug.log(LogType::DEBUG, "recv : " + std::to_string(nbytes) + " " + std::string(buffer, nbytes));
     if (nbytes < 0)
     {
         log_debug.log(LogType::ERROR, "Error read from : " +  std::to_string(it->fd));
