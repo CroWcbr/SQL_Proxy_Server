@@ -25,7 +25,7 @@ static void    _signal_handler(int signal)
         std::cout << msg << std::endl;
         std::cout << "\033[0m";
     }
-    Proxy::stop();
+    Proxy::stop(); // для корректного завершения
 }
 
 int main(int argc, char **argv)

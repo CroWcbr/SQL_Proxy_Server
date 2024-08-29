@@ -128,14 +128,6 @@ bool Proxy::_proxy_start()
 
 void Proxy::run()
 {
-    // std::cout << "fds " << fds.size() << "\t : ";
-    // for (auto f : fds)
-    //     std::cout << f.fd << " ";
-    // std::cout << std::endl;
-    // std::cout << "connection " << connection.size() << "\t : ";
-    // for (auto f : connection)
-    //     std::cout << f.first << " ";
-    // std::cout << std::endl;
     while(!should_stop)
     {
         int poll_count = poll(&(fds.front()), fds.size(), 1000);
@@ -157,7 +149,7 @@ void Proxy::run()
             if (it->revents & POLLIN && it->fd == proxy_fd)
             {
                 _poll_in_serv(it);
-                break;
+                break; // т.к. измениля вектор fds
             }
             else if (!connection[it->fd].active)
                 continue;
@@ -171,6 +163,7 @@ void Proxy::run()
             it->revents = 0;
         }
 
+        // удаление отключенных клиентов
         for (auto it = fds.begin(); it != fds.end(); )
         {
             if (!connection[it->fd].active)
@@ -182,15 +175,6 @@ void Proxy::run()
             else
                 ++it;
         }
-
-        // std::cout << "fds " << fds.size() << "\t : ";
-        // for (auto f : fds)
-        //     std::cout << f.fd << " ";
-        // std::cout << std::endl;
-        // std::cout << "connection " << connection.size() << "\t : ";
-        // for (auto f : connection)
-        //     std::cout << f.first << " ";
-        // std::cout << std::endl;
     }
 }
 
@@ -199,6 +183,7 @@ void Proxy::_poll_in_serv(pollfdType::iterator &it)
     // установка соединения
     // log_debug.log(LogType::INFO, "_poll_in_serv : " + std::to_string(it->fd));
 
+    it->revents = 0;
     int user_fd = accept(it->fd, nullptr, nullptr);
     if (user_fd < 0)
     {
@@ -267,8 +252,10 @@ void Proxy::_poll_in_connection(pollfdType::iterator &it)
 {
     // пересылка сообщения
     // Драфт, я не ожидаю большие сообщения, работает в один заход, в будущем можно добавить цикл или отправку частями.
-    // log_debug.log(LogType::INFO, "_poll_in_connection : " +  std::to_string(it->fd) + " from " + (connection[it->fd].client ? "client" : "server"));
+    // Слабое место, если придет очень большой запрос (>64Кб), он может разбиться на несколько и неправильно залогироваться
+    // есть риск что не все отправится, можно сделать отправку сообщения в цикле.
 
+    // log_debug.log(LogType::INFO, "_poll_in_connection : " +  std::to_string(it->fd) + " from " + (connection[it->fd].client ? "client" : "server"));
     char buffer[MAX_BUFFER_RECV];
     int nbytes = recv(it->fd, buffer, MAX_BUFFER_RECV - 1, 0);
 
@@ -287,12 +274,14 @@ void Proxy::_poll_in_connection(pollfdType::iterator &it)
     }
     else
     {
-        // Logging query
+        // Logging query Q + 4 байта длина + длина сообщения + завершающий '\0'
         if (buffer[0] == 'Q' && nbytes >= 5)
         {
             int32_t length = ntohl(*reinterpret_cast<int32_t*>(buffer + 1));
             if (length == nbytes - 1)
-                log_query.log(buffer + 5, length);
+                log_query.log(buffer + 5, length - 5);
+            else
+                log_debug.log(LogType::WARNING, "Broken package of SQL query");
         }
 
         int result = send(connection[it->fd].to, buffer, nbytes, 0);
