@@ -3,6 +3,20 @@
 #include <filesystem>
 #include <cstring>
 
+Logger_query::Logger_query()
+{
+    file_stream.copyfmt(std::cout);
+    file_stream.basic_ios::rdbuf(std::cout.rdbuf());
+
+    if (!file_stream) 
+    {
+        std::cerr << "Error redirecting stream to terminal" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    log_thread = std::thread(&Logger_query::log_worker, this);
+    std::cout << "Logger to terminal start" << std::endl;
+}
+
 Logger_query::Logger_query(const std::string& file_name)
 {
     if (!std::filesystem::exists(LOG_Q_DIR)) 
@@ -68,7 +82,20 @@ void Logger_query::log_worker()
             log_queue.pop();
             lock.unlock();
 
-            file_stream << getCurrentDateTime() << std::string(message.begin(), message.end()) << std::endl;
+            file_stream << getCurrentDateTime();
+
+            file_stream.write(message.data(), message.size());
+            // для тестов sysbench, что бы не разрастался бесконечно лог файл ))))
+            // if (message.size() > 1000)
+            // {
+            //     file_stream << std::to_string(message.size()) << "\t";
+            //     file_stream.write(message.data(), 1000);
+            // } 
+            // else
+            //     file_stream.write(message.data(), message.size());
+
+            file_stream << std::endl;
+                
 
             lock.lock();
         }

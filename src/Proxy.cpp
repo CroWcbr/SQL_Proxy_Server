@@ -18,12 +18,13 @@ Proxy::Proxy(int argc, char **argv):
     if (!(_init_param(argc, argv) && _proxy_start()))
     {
         log_query.~Logger_query();
+        // log_query.~Logger();
         log_debug.~Logger();
         exit(1);
     }
 
     fds.emplace_back(pollfd{proxy_fd, POLLIN, 0});
-    connection[proxy_fd] = Connection{proxy_fd, false, true};
+    connection[proxy_fd] = Connection{proxy_fd, false, true, false, 0, std::vector<char>()};
     log_debug.log(LogType::INFO, "Proxy start on " + proxy_host + " port " + proxy_port + " on fd " + std::to_string(proxy_fd));
 }
 
@@ -181,7 +182,7 @@ void Proxy::run()
 void Proxy::_poll_in_serv(pollfdType::iterator &it)
 {
     // установка соединения
-    // log_debug.log(LogType::INFO, "_poll_in_serv : " + std::to_string(it->fd));
+    log_debug.log(LogType::DEBUG, "_poll_in_serv : " + std::to_string(it->fd));
 
     it->revents = 0;
     int user_fd = accept(it->fd, nullptr, nullptr);
@@ -201,6 +202,7 @@ void Proxy::_poll_in_serv(pollfdType::iterator &it)
     addrinfo hints{};
     addrinfo* res = nullptr;
 
+    hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
     int status = getaddrinfo(postgresql_host.c_str(), postgresql_port.c_str(), &hints, &res);
@@ -242,8 +244,8 @@ void Proxy::_poll_in_serv(pollfdType::iterator &it)
     fds.emplace_back(pollfd{user_fd, POLLIN, 0});
     fds.emplace_back(pollfd{remote_fd, POLLIN, 0});
 
-    connection[user_fd] = Connection{remote_fd, true,  true};
-    connection[remote_fd] = Connection{user_fd, false, true};
+    connection[user_fd] = Connection{remote_fd, true, true, false, 0, std::vector<char>()};
+    connection[remote_fd] = Connection{user_fd, false, true, false, 0, std::vector<char>()};
 
     log_debug.log(LogType::INFO, "Client connect to proxy. Client fd " +  std::to_string(user_fd) + " Remote fd " + std::to_string(remote_fd));
 }
@@ -255,16 +257,39 @@ void Proxy::_poll_in_connection(pollfdType::iterator &it)
     // Слабое место, если придет очень большой запрос (>64Кб), он может разбиться на несколько и неправильно залогироваться
     // есть риск что не все отправится, можно сделать отправку сообщения в цикле.
 
-    // log_debug.log(LogType::INFO, "_poll_in_connection : " +  std::to_string(it->fd) + " from " + (connection[it->fd].client ? "client" : "server"));
+    log_debug.log(LogType::DEBUG, "_poll_in_connection : " +  std::to_string(it->fd) + " from " + (connection[it->fd].client ? "client" : "server"));
     char buffer[MAX_BUFFER_RECV];
     int nbytes = recv(it->fd, buffer, MAX_BUFFER_RECV - 1, 0);
 
-    // log_debug.log(LogType::DEBUG, "recv : " + std::to_string(nbytes) + " " + std::string(buffer, nbytes));
+    log_debug.log(LogType::DEBUG, "recv : " + std::to_string(nbytes) + " " + std::string(buffer, nbytes));
     if (nbytes < 0)
     {
-        log_debug.log(LogType::ERROR, "Error read from : " +  std::to_string(it->fd));
-        connection[it->fd].active = false;
-        connection[connection[it->fd].to].active = false;
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        {
+            // Нет данных для чтения, будем ждать следующей итерации
+            log_debug.log(LogType::WARNING, "Non-blocking operation error : " + std::string(strerror(errno)));
+            return;
+        }
+        else if (errno == EINTR)
+        {
+            // Вызов был прерван сигналом, попробуем снова
+            log_debug.log(LogType::WARNING, "Operation interrupted by signal : " + std::string(strerror(errno)));
+            return;
+        }
+        else if (errno == ECONNRESET || errno == EPIPE)
+        {
+            log_debug.log(LogType::ERROR, "Connection reset by peer or broken pipe on : " + std::to_string(it->fd));
+            connection[it->fd].active = false;
+            connection[connection[it->fd].to].active = false;
+            return;
+        }
+        else
+        {
+            log_debug.log(LogType::ERROR, std::string(std::strerror(errno)) + " on " + std::to_string(it->fd));
+            connection[it->fd].active = false;
+            connection[connection[it->fd].to].active = false;
+            return;
+        }
     }
     else if (nbytes == 0)
     {
@@ -275,27 +300,109 @@ void Proxy::_poll_in_connection(pollfdType::iterator &it)
     else
     {
         // Logging query Q + 4 байта длина + длина сообщения + завершающий '\0'
-        if (buffer[0] == 'Q' && nbytes >= 5)
+        if (connection[it->fd].client)
         {
-            int32_t length = ntohl(*reinterpret_cast<int32_t*>(buffer + 1));
-            if (length == nbytes - 1)
+            if (!connection[it->fd].len_query && buffer[0] == 'Q' && nbytes >= 5)
             {
-                std::vector<char> message(buffer + 5, buffer + length);
-                log_query.log(std::move(message));
+                connection[it->fd].len_query = ntohl(*reinterpret_cast<int32_t*>(buffer + 1)) + 1;   
+                connection[it->fd].data.insert(connection[it->fd].data.end(), buffer + 5, buffer + nbytes); // записываем в буффер  
             }
-            else
-                log_debug.log(LogType::WARNING, "Broken package of SQL query");
+            else if (connection[it->fd].len_query)
+            {
+                connection[it->fd].data.insert(connection[it->fd].data.end(), buffer, buffer + nbytes); // записываем в буффер
+            }
+  
+        // log_debug.log(LogType::DEBUG, "\t\tnbytes: " +  std::to_string(nbytes));
+        // log_debug.log(LogType::DEBUG, "\t\tlen_query: " +  std::to_string(connection[it->fd].len_query));
+        // log_debug.log(LogType::DEBUG, "\t\tdata.size(): " +  std::to_string(connection[it->fd].data.size()));
+        // log_debug.log(LogType::DEBUG, "\t\t" + std::string(connection[it->fd].data.begin(), connection[it->fd].data.end()));
+
+            if (connection[it->fd].len_query)
+            {
+                if (connection[it->fd].data.size() + 5 == connection[it->fd].len_query) 
+                {
+                    // удаляем код + длину и в конце завершающий символ
+                    connection[it->fd].data.pop_back(); 
+                    log_query.log(std::move(connection[it->fd].data));
+                    connection[it->fd].len_query = 0;
+                }
+                else if (connection[it->fd].data.size() > connection[it->fd].len_query)
+                {
+                    connection[it->fd].data.clear();
+                    connection[it->fd].len_query = 0;
+                }
+            }
         }
 
-        int result = send(connection[it->fd].to, buffer, nbytes, 0);
-        if (result < 0)
+            // if (connection[it->fd].init) // первые сообщения не имеет длины, это обмен информацией от клиента к серверу
+            // {
+            //     if (!connection[it->fd].len_query) // находим длину сообения
+            //         connection[it->fd].len_query = ntohl(*reinterpret_cast<int32_t*>(buffer + 1)) + 1;
+
+            //     connection[it->fd].data.insert(connection[it->fd].data.end(), buffer, buffer + nbytes); // записываем в буффер
+
+            //     log_debug.log(LogType::DEBUG, "\t\tnbytes: " +  std::to_string(nbytes));
+            //     log_debug.log(LogType::DEBUG, "\t\tlen_query: " +  std::to_string(connection[it->fd].len_query));
+            //     log_debug.log(LogType::DEBUG, "\t\tdata.size(): " +  std::to_string(connection[it->fd].data.size()));
+            //     log_debug.log(LogType::DEBUG, "\t\t" + std::string(connection[it->fd].data.begin(), connection[it->fd].data.end()));
+
+            //     if (connection[it->fd].data.size() == connection[it->fd].len_query) 
+            //     {
+            //         if (connection[it->fd].data[0] == 'Q')
+            //         {
+            //             // удаляем код + длину и в конце завершающий символ
+            //             connection[it->fd].data.erase(connection[it->fd].data.begin(), connection[it->fd].data.begin() + 5);
+            //             connection[it->fd].data.pop_back(); 
+            //             log_query.log(std::move(connection[it->fd].data));
+            //         }
+            //         else
+            //             connection[it->fd].data.clear();
+            //         connection[it->fd].len_query = 0;
+            //     }
+            //     else if (connection[it->fd].data.size() > connection[it->fd].len_query)
+            //     {
+            //         connection[it->fd].data.clear();
+            //         connection[it->fd].len_query = 0;
+            //     }
+            // }
+            // else if (buffer[0] == 'Q' && nbytes >= 5)
+            //     connection[it->fd].init = true;
+        // }
+
+        // простая версия без буфера, работает на запросах меньше MAX_BUFFER_RECV
+        // if (connection[it->fd].client && buffer[0] == 'Q' && nbytes >= 5)
+        // {
+        //     int32_t length = ntohl(*reinterpret_cast<int32_t*>(buffer + 1));
+        //     if (length == nbytes - 1)
+        //     {
+        //         std::vector<char> message(buffer + 5, buffer + length);
+        //         log_query.log(std::move(message));
+        //         // log_query.log(buffer + 5, nbytes - 5);
+        //     }
+        //     else
+        //         log_debug.log(LogType::WARNING, "Broken package of SQL query");
+        // }
+
+        int send_b = 0;
+        int ret_count = 0;
+        while (send_b < nbytes)
         {
-            log_debug.log(LogType::ERROR, "Error send from : " +  std::to_string(it->fd) + " to " + std::to_string(connection[it->fd].to));
-            connection[it->fd].active = false;
-            connection[connection[it->fd].to].active = false;
-            return ;
-        }       
-        it->events = POLLIN;
+            int result = send(connection[it->fd].to, buffer, nbytes, 0);
+            if ((result == -1 && errno != EAGAIN) || ret_count == 20)
+            {
+                log_debug.log(LogType::ERROR, "Error send from : " +  std::to_string(it->fd) + " to " + std::to_string(connection[it->fd].to));
+                connection[it->fd].active = false;
+                connection[connection[it->fd].to].active = false;
+                return ;
+            }
+            else if (result == -1 && errno == EAGAIN)
+                ret_count++;
+            else
+            {
+                send_b += result;
+                ret_count = 0;
+            }
+        }
     }
 }
 

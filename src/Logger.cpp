@@ -16,6 +16,7 @@ Logger::Logger()
         std::cerr << "Error redirecting stream to terminal" << std::endl;
         exit(EXIT_FAILURE);
     }
+    std::cout << "Logger start in terminal" << std::endl;
 }
 
 Logger::Logger(const std::string& file_name)
@@ -83,6 +84,8 @@ void Logger::log(LogType type, const std::string& message)
             file_stream << "[ERROR] ";
             break;
         case LogType::DEBUG:
+            if (!debug)
+                return;
             file_stream << "[DEBUG] ";
             break;
         case LogType::WARNING:

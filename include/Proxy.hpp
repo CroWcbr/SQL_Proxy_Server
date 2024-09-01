@@ -12,17 +12,24 @@ constexpr const char* LOG_QUERY = "log_query";
 constexpr const char* LOG_DEBUG = "log_debug";
 constexpr const char* PROXY_HOST = "127.0.0.1";
 constexpr int MAX_LISTEN = 100;
-constexpr int MAX_BUFFER_RECV = 65536;
+constexpr int MAX_BUFFER_RECV = 65436; // если маленькое будут ошибки в логгировании, т.к. я не могу узнать длину первого сообщения и пропускаю его.
 
 // Структура соединий
 // to - сервер с которым связан
-// client - не используется, был для отладки
+// client - клент или сервер
 // active - для перевода в неактивное состояние и удаление после прохода всех соединений
+// init - инициизирован ли (первое сообщение без длины, поэтому нужна доп переменная)
+// len_query - длина запроса
+// data - вектор символов запроса, если не влез в буфер[MAX_BUFFER_RECV]
+
 struct Connection
 {
-    int     to;
-    bool    client;
-    bool    active;
+    int                 to;
+    bool                client;
+    bool                active;
+    bool                init;
+    int                 len_query;
+    std::vector<char>   data;
 };
 
 class Proxy
