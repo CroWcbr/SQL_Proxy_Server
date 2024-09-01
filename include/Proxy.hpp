@@ -1,26 +1,25 @@
 #pragma once
 
 #include "../include/Logger.hpp"
+#include "../include/Logger_query.hpp"
 #include <string>
 #include <vector>
 #include <map>
 
 #include <poll.h>
 
-#define LOG_QUERY "log_query"
-#define LOG_DEBUG "log_debug"
-#define PROXY_HOST "127.0.0.1"
-#define MAX_LISTEN 100
-# define MAX_BUFFER_RECV 65536
+constexpr const char* LOG_QUERY = "log_query";
+constexpr const char* LOG_DEBUG = "log_debug";
+constexpr const char* PROXY_HOST = "127.0.0.1";
+constexpr int MAX_LISTEN = 100;
+constexpr int MAX_BUFFER_RECV = 65536;
 
-// для сохранения fd и c каким fd соединен. 
-// from - не используется, был для отладки
+// Структура соединий
 // to - сервер с которым связан
 // client - не используется, был для отладки
 // active - для перевода в неактивное состояние и удаление после прохода всех соединений
 struct Connection
 {
-    int     from;
     int     to;
     bool    client;
     bool    active;
@@ -30,11 +29,13 @@ class Proxy
 {
 private:
 // Logger
-    Logger          log_query;
-    Logger          log_debug;
+    Logger_query    log_query;  // логгер в отдельном потоке
+    Logger          log_debug;  // обычный логгер
 
+// вектор открытых соединений
     typedef std::vector<struct pollfd> pollfdType;
     pollfdType      fds;
+    std::map<int, Connection> connection;
 
 // Proxy server
     std::string     proxy_host;
@@ -45,13 +46,12 @@ private:
     std::string     postgresql_host;
     std::string     postgresql_port;
 
-    std::map<int, Connection> connection;
-
+// точка остановки
     static bool     should_stop;
 
 private:
-    bool            _init_param(int argc, char **argv);
-    bool            _proxy_start();
+    bool    _init_param(int argc, char **argv);
+    bool    _proxy_start();
 
     void    _poll_in_serv(pollfdType::iterator &it);
     void    _poll_in_connection(pollfdType::iterator &it);

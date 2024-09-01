@@ -3,7 +3,7 @@
 #include <string>
 #include <fstream>
 
-#define LOG_DIR "./log"
+constexpr const char*  LOG_DIR = "./log";
 
 enum LogType
 {
@@ -18,7 +18,7 @@ class Logger
 {
 private:
     std::ofstream   file_stream;
-    std::string     full_file_path;
+
     std::string     getCurrentDateTime();
 
 public:
@@ -31,5 +31,4 @@ public:
     void log(const std::string& message);
     void log(const char* message, size_t length);
     void log(LogType type, const std::string& message);
-
 };

@@ -8,24 +8,29 @@ bool Proxy::should_stop = false;
 
 static void    _signal_handler(int signal)
 {
+    std::string msg = "\r SIGNAL";
+    if (signal == SIGPIPE)
     {
-        std::string msg = "\rSTOP SIGNAL";
-        if (signal == -1)
-            msg.append(" Ctrl + D ");
-        else if (signal == 2)
-            msg.append(" Ctrl + C ");
-        else if (signal == 3)
-            msg.append(" Ctrl + / ");
-        else if (signal == 20)
-            msg.append(" Ctrl + Z ");
+        msg.append(" SIGPIPE (Broken pipe) ");
+        std::cout << msg << std::endl;
+    }
+    else
+    {
+        if (signal == SIGINT)
+            msg.append(" SIGINT (Interrupt from keyboard) ");
+        else if (signal == SIGQUIT)
+            msg.append(" SIGQUIT (Quit from keyboard) ");
+        else if (signal == SIGTSTP)
+            msg.append(" SIGTSTP (Terminal stop) ");
 
         msg.append("from user");
 
         std::cout << "\033[91m";
         std::cout << msg << std::endl;
         std::cout << "\033[0m";
+        
+        Proxy::stop(); // для корректного завершения
     }
-    Proxy::stop(); // для корректного завершения
 }
 
 int main(int argc, char **argv)
@@ -33,6 +38,7 @@ int main(int argc, char **argv)
     signal(SIGINT, _signal_handler);
     signal(SIGQUIT, _signal_handler);
     signal(SIGTSTP, _signal_handler);
+    signal(SIGPIPE, _signal_handler);
 
     Proxy proxy(argc, argv);
     proxy.run();

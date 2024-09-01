@@ -38,7 +38,7 @@ Logger::Logger(const std::string& file_name)
         exit(EXIT_FAILURE);
     }
     
-    full_file_path = std::string(LOG_DIR) + "/" + file_name;
+    std::string full_file_path = std::string(LOG_DIR) + "/" + file_name;
 
     file_stream.open(full_file_path, std::ios::app);
 

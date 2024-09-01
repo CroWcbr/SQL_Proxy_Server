@@ -13,17 +13,17 @@
 
 Proxy::Proxy(int argc, char **argv):
     log_query(LOG_QUERY)
-    , log_debug(LOG_DEBUG) // дефолтный конструктор по умолчанию в stdout
+    // , log_debug(LOG_DEBUG) // logger для информационных сообщений, дефолтный в stdout
 {
     if (!(_init_param(argc, argv) && _proxy_start()))
     {
-        log_query.~Logger();
+        log_query.~Logger_query();
         log_debug.~Logger();
         exit(1);
     }
 
     fds.emplace_back(pollfd{proxy_fd, POLLIN, 0});
-    connection[proxy_fd] = Connection{proxy_fd, proxy_fd, false, true};
+    connection[proxy_fd] = Connection{proxy_fd, false, true};
     log_debug.log(LogType::INFO, "Proxy start on " + proxy_host + " port " + proxy_port + " on fd " + std::to_string(proxy_fd));
 }
 
@@ -242,8 +242,8 @@ void Proxy::_poll_in_serv(pollfdType::iterator &it)
     fds.emplace_back(pollfd{user_fd, POLLIN, 0});
     fds.emplace_back(pollfd{remote_fd, POLLIN, 0});
 
-    connection[user_fd] = Connection{user_fd, remote_fd, true,  true};
-    connection[remote_fd] = Connection{remote_fd, user_fd, false, true};
+    connection[user_fd] = Connection{remote_fd, true,  true};
+    connection[remote_fd] = Connection{user_fd, false, true};
 
     log_debug.log(LogType::INFO, "Client connect to proxy. Client fd " +  std::to_string(user_fd) + " Remote fd " + std::to_string(remote_fd));
 }
@@ -279,7 +279,10 @@ void Proxy::_poll_in_connection(pollfdType::iterator &it)
         {
             int32_t length = ntohl(*reinterpret_cast<int32_t*>(buffer + 1));
             if (length == nbytes - 1)
-                log_query.log(buffer + 5, length - 5);
+            {
+                std::vector<char> message(buffer + 5, buffer + length);
+                log_query.log(std::move(message));
+            }
             else
                 log_debug.log(LogType::WARNING, "Broken package of SQL query");
         }
