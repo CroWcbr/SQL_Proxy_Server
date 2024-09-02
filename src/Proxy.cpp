@@ -13,18 +13,16 @@
 
 Proxy::Proxy(int argc, char **argv):
     log_query(LOG_QUERY)
-    // , log_debug(LOG_DEBUG) // logger для информационных сообщений, дефолтный в stdout
 {
     if (!(_init_param(argc, argv) && _proxy_start()))
     {
         log_query.~Logger_query();
-        // log_query.~Logger();
         log_debug.~Logger();
         exit(1);
     }
 
     fds.emplace_back(pollfd{proxy_fd, POLLIN, 0});
-    connection[proxy_fd] = Connection{proxy_fd, false, true, false, 0, std::vector<char>()};
+    connection[proxy_fd] = Connection{proxy_fd, false, true, 0, std::vector<char>()};
     log_debug.log(LogType::INFO, "Proxy start on " + proxy_host + " port " + proxy_port + " on fd " + std::to_string(proxy_fd));
 }
 
@@ -150,7 +148,7 @@ void Proxy::run()
             if (it->revents & POLLIN && it->fd == proxy_fd)
             {
                 _poll_in_serv(it);
-                break; // т.к. измениля вектор fds
+                break;
             }
             else if (!connection[it->fd].active)
                 continue;
@@ -164,7 +162,6 @@ void Proxy::run()
             it->revents = 0;
         }
 
-        // удаление отключенных клиентов
         for (auto it = fds.begin(); it != fds.end(); )
         {
             if (!connection[it->fd].active)
@@ -181,7 +178,6 @@ void Proxy::run()
 
 void Proxy::_poll_in_serv(pollfdType::iterator &it)
 {
-    // установка соединения
     log_debug.log(LogType::DEBUG, "_poll_in_serv : " + std::to_string(it->fd));
 
     it->revents = 0;
@@ -244,19 +240,14 @@ void Proxy::_poll_in_serv(pollfdType::iterator &it)
     fds.emplace_back(pollfd{user_fd, POLLIN, 0});
     fds.emplace_back(pollfd{remote_fd, POLLIN, 0});
 
-    connection[user_fd] = Connection{remote_fd, true, true, false, 0, std::vector<char>()};
-    connection[remote_fd] = Connection{user_fd, false, true, false, 0, std::vector<char>()};
+    connection[user_fd] = Connection{remote_fd, true, true, 0, std::vector<char>()};
+    connection[remote_fd] = Connection{user_fd, false, true, 0, std::vector<char>()};
 
     log_debug.log(LogType::INFO, "Client connect to proxy. Client fd " +  std::to_string(user_fd) + " Remote fd " + std::to_string(remote_fd));
 }
 
 void Proxy::_poll_in_connection(pollfdType::iterator &it)
 {
-    // пересылка сообщения
-    // Драфт, я не ожидаю большие сообщения, работает в один заход, в будущем можно добавить цикл или отправку частями.
-    // Слабое место, если придет очень большой запрос (>64Кб), он может разбиться на несколько и неправильно залогироваться
-    // есть риск что не все отправится, можно сделать отправку сообщения в цикле.
-
     log_debug.log(LogType::DEBUG, "_poll_in_connection : " +  std::to_string(it->fd) + " from " + (connection[it->fd].client ? "client" : "server"));
     char buffer[MAX_BUFFER_RECV];
     int nbytes = recv(it->fd, buffer, MAX_BUFFER_RECV - 1, 0);
@@ -266,13 +257,11 @@ void Proxy::_poll_in_connection(pollfdType::iterator &it)
     {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
         {
-            // Нет данных для чтения, будем ждать следующей итерации
             log_debug.log(LogType::WARNING, "Non-blocking operation error : " + std::string(strerror(errno)));
             return;
         }
         else if (errno == EINTR)
         {
-            // Вызов был прерван сигналом, попробуем снова
             log_debug.log(LogType::WARNING, "Operation interrupted by signal : " + std::string(strerror(errno)));
             return;
         }
@@ -305,24 +294,18 @@ void Proxy::_poll_in_connection(pollfdType::iterator &it)
             if (!connection[it->fd].len_query && buffer[0] == 'Q' && nbytes >= 5)
             {
                 connection[it->fd].len_query = ntohl(*reinterpret_cast<int32_t*>(buffer + 1)) + 1;   
-                connection[it->fd].data.insert(connection[it->fd].data.end(), buffer + 5, buffer + nbytes); // записываем в буффер  
+                connection[it->fd].data.insert(connection[it->fd].data.end(), buffer + 5, buffer + nbytes);
             }
             else if (connection[it->fd].len_query)
             {
-                connection[it->fd].data.insert(connection[it->fd].data.end(), buffer, buffer + nbytes); // записываем в буффер
+                connection[it->fd].data.insert(connection[it->fd].data.end(), buffer, buffer + nbytes);
             }
   
-        // log_debug.log(LogType::DEBUG, "\t\tnbytes: " +  std::to_string(nbytes));
-        // log_debug.log(LogType::DEBUG, "\t\tlen_query: " +  std::to_string(connection[it->fd].len_query));
-        // log_debug.log(LogType::DEBUG, "\t\tdata.size(): " +  std::to_string(connection[it->fd].data.size()));
-        // log_debug.log(LogType::DEBUG, "\t\t" + std::string(connection[it->fd].data.begin(), connection[it->fd].data.end()));
-
             if (connection[it->fd].len_query)
             {
                 if (connection[it->fd].data.size() + 5 == connection[it->fd].len_query) 
                 {
-                    // удаляем код + длину и в конце завершающий символ
-                    connection[it->fd].data.pop_back(); 
+                    connection[it->fd].data.pop_back(); // удаляем завершающий символ
                     log_query.log(std::move(connection[it->fd].data));
                     connection[it->fd].len_query = 0;
                 }
@@ -333,42 +316,6 @@ void Proxy::_poll_in_connection(pollfdType::iterator &it)
                 }
             }
         }
-
-            // if (connection[it->fd].init) // первые сообщения не имеет длины, это обмен информацией от клиента к серверу
-            // {
-            //     if (!connection[it->fd].len_query) // находим длину сообения
-            //         connection[it->fd].len_query = ntohl(*reinterpret_cast<int32_t*>(buffer + 1)) + 1;
-
-            //     connection[it->fd].data.insert(connection[it->fd].data.end(), buffer, buffer + nbytes); // записываем в буффер
-
-            //     log_debug.log(LogType::DEBUG, "\t\tnbytes: " +  std::to_string(nbytes));
-            //     log_debug.log(LogType::DEBUG, "\t\tlen_query: " +  std::to_string(connection[it->fd].len_query));
-            //     log_debug.log(LogType::DEBUG, "\t\tdata.size(): " +  std::to_string(connection[it->fd].data.size()));
-            //     log_debug.log(LogType::DEBUG, "\t\t" + std::string(connection[it->fd].data.begin(), connection[it->fd].data.end()));
-
-            //     if (connection[it->fd].data.size() == connection[it->fd].len_query) 
-            //     {
-            //         if (connection[it->fd].data[0] == 'Q')
-            //         {
-            //             // удаляем код + длину и в конце завершающий символ
-            //             connection[it->fd].data.erase(connection[it->fd].data.begin(), connection[it->fd].data.begin() + 5);
-            //             connection[it->fd].data.pop_back(); 
-            //             log_query.log(std::move(connection[it->fd].data));
-            //         }
-            //         else
-            //             connection[it->fd].data.clear();
-            //         connection[it->fd].len_query = 0;
-            //     }
-            //     else if (connection[it->fd].data.size() > connection[it->fd].len_query)
-            //     {
-            //         connection[it->fd].data.clear();
-            //         connection[it->fd].len_query = 0;
-            //     }
-            // }
-            // else if (buffer[0] == 'Q' && nbytes >= 5)
-            //     connection[it->fd].init = true;
-        // }
-
         // простая версия без буфера, работает на запросах меньше MAX_BUFFER_RECV
         // if (connection[it->fd].client && buffer[0] == 'Q' && nbytes >= 5)
         // {
@@ -377,7 +324,6 @@ void Proxy::_poll_in_connection(pollfdType::iterator &it)
         //     {
         //         std::vector<char> message(buffer + 5, buffer + length);
         //         log_query.log(std::move(message));
-        //         // log_query.log(buffer + 5, nbytes - 5);
         //     }
         //     else
         //         log_debug.log(LogType::WARNING, "Broken package of SQL query");
@@ -408,13 +354,12 @@ void Proxy::_poll_in_connection(pollfdType::iterator &it)
 
 void Proxy::_poll_out(pollfdType::iterator &it)
 {
-    // Я не сохраняю информацию на прокси, что получил, то и сразу отправил. Не должен сюда заходить.
+    // Я не сохраняю информацию на прокси, что получил, то и сразу отправил.
     log_debug.log(LogType::WARNING, "_poll_out : " +  std::to_string(it->fd) + " from " + (connection[it->fd].client ? "client" : "server"));
 }
 
 void Proxy::_poll_else(pollfdType::iterator &it)
 {
-    // Проверка poll
     log_debug.log(LogType::WARNING, "_poll_else : " +  std::to_string(it->fd) + " from " + (connection[it->fd].client ? "client" : "server"));
 
     if (it->revents & POLLNVAL)
